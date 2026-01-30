@@ -1,0 +1,92 @@
+[BITS 16]
+[ORG 0x7c00]
+
+start:
+
+    xor ax,ax
+    mov ds,ax
+    mov es,ax
+    mov ss,ax
+    mov sp, 0x7c00
+
+clear_screen:
+    mov ah, 0x00      ; função 00h = set video mode
+    mov al, 0x03      ; modo 03h = texto 80x25, colorido
+    int 0x10          ; BIOS video interrupt
+
+test_disk_extension:
+    mov [DriveId], dl
+    mov ah,0x41
+    mov bx,0x55aa
+    int 0x13
+    jc  Support
+    cmp bx, 0xaa55
+    jne Support
+
+loadloader:
+                                    ;ReadPacket Struct
+                                    ;offset     field
+                                    ;0          size
+                                    ;2          number of sectors
+                                    ;4          offset
+                                    ;6          segment
+                                    ;8          address lo
+                                    ;12         address hi
+
+    mov ah, 0x02        ; read sectors (CHS)
+    mov al, 1           ; 1 sector
+    mov ch, 0           ; cylinder
+    mov cl, 2           ; sector 2
+    mov dh, 0           ; head
+    mov dl, [DriveId]
+    mov ah,0x42
+    int 0x13
+    jc ReadError
+
+    mov dl,[DriveId]
+    jmp 0x0000:0x7e00              ; address we load our loader from disk
+
+
+ReadError:
+NotSupport:
+    mov ah,0x13
+    mov al, 1
+    mov bx,0xa
+    xor dx,dx
+    mov bp,Message
+    mov cx,MessageLen
+    int 0x10
+
+Support:
+    mov ah,0x13
+    mov al, 1
+    mov bx,0xa
+    xor dx,dx
+    mov bp,OkMessage
+    mov cx,OkMessageLen
+    int 0x10
+
+
+
+end:
+    hlt
+    jmp end
+
+
+Message: db "Error in Boot process"
+MessageLen: equ $-Message
+DriveId: db 0
+ReadPacket: times 16 db 0
+OkMessage: db "failed on not support"
+OkMessageLen: equ $-OkMessageLen
+
+times (0x1be -($-$$)) db 0
+
+    db 80h              ;boot indicator
+    db 0,2,0            ;starting CHS
+    db 0f0h             ;type
+    db 0ffh,0ffh,0ffh   ;ending CHS
+    dd 1                ;starting sector
+    dd (20*16*63-1)     ;size 10MB
+
+dw 0xAA55
