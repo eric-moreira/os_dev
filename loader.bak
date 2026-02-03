@@ -1,0 +1,138 @@
+[BITS 16]
+[ORG 0x7e00]
+
+start:
+.clear_screen:
+    mov ah, 0x00      ; função 00h = set video mode
+    mov al, 0x03      ; modo 03h = texto 80x25, colorido
+    int 0x10          ; BIOS video interrupt
+
+.check_cpuid:
+    mov [DriveId], dl
+    mov eax, 0x80000000
+    cpuid
+    cmp eax, 0x80000001
+    jb NotSupport
+
+    mov eax, 0x80000001
+    cpuid
+    test edx, (1<<29)
+    jz NotSupport
+    test edx, (1<<26)
+    jz NotSupport
+
+
+load_kernel:
+    mov si, ReadPacket
+    mov word[si], 0x10
+    mov word[si+2], 100
+    mov word[si+4], 0           ; offset = 0
+    mov word[si+6], 0x1000      ; segment 0x1000:0 = 0x1000*16 + 0 (offset) = 0x10000
+    mov dword[si+8], 6
+    mov dword[si+0xc], 0
+    mov dl,[DriveId]
+    mov ah,0x42
+    int 0x13
+    jc ReadError
+
+test_memory_info:
+    mov eax, 0xe820
+    mov edx, 0x534d4150
+    mov ecx, 20
+    mov edi, 0x9000
+    xor ebx, ebx
+    int 0x15
+    jc NotSupport
+
+get_mem_info:
+    add edi, 20
+    mov eax, 0xe820
+    mov edx, 0x534d4150
+    mov ecx, 20
+    int 0x15
+    jc  get_mem_done
+
+    test ebx, ebx
+    jnz get_mem_info
+
+get_mem_done:
+
+
+test_a20:
+    mov ax, 0xffff
+    mov es, ax
+    mov word[ds:0x7c00], 0xa200
+    cmp word[es:0x7c10], 0xa200
+    jne SetA20LineDone
+    mov word[0x7c00], 0xb200
+    cmp word[es:0x7c10], 0xb200
+    je end
+
+SetA20LineDone:
+    xor ax, ax
+    mov es,ax
+    mov ax, 3
+    int 0x10
+    mov si, Message
+    mov ax, 0xb800
+    mov es, ax
+    xor di,di
+    mov cx, MessageLen
+
+PrintMessage:
+    mov al, [si]
+    mov [es:di],al
+    mov byte[es:di+1], 0xa
+
+    add di, 2
+    add si, 1
+    loop PrintMessage
+
+
+ReadError:
+    mov ah, 0x13
+    mov al, 1
+    mov bx,0xa
+    xor dx,dx
+    mov bp,msgReadError
+    mov cx,msgReadErrorLen
+    int 0x10
+    jmp end
+
+NotSupport:
+    mov ah, 0x13
+    mov al, 1
+    mov bx,0xa
+    xor dx,dx
+    mov bp,MsgSupport
+    mov cx,MsgSupportLen
+    int 0x10
+end:
+    hlt
+    jmp end
+
+Message: db "Text mode is set"
+MessageLen: equ $-Message
+MsgSupport: db "Error"
+MsgSupportLen: equ $-MsgSupport
+msgReadError: db "Read Error"
+msgReadErrorLen: equ $-msgReadError
+DriveId: db 0
+ReadPacket: times 16 db 0
+
+                                    ;Structures and offsets
+
+                                    ;ReadPacket Struct
+                                    ;offset     field
+                                    ;0          size
+                                    ;2          number of sectors
+                                    ;4          offset
+                                    ;6          segment
+                                    ;8          address lo
+                                    ;12         address hi
+
+                                    ;MemInfo    Layout
+                                    ;offset     field
+                                    ;0          base address (qword) 64bits
+                                    ;8          length
+                                    ;16         type

@@ -8,9 +8,6 @@ start:
     mov es,ax
     mov ss,ax
     mov sp, 0x7c00
-    call clear_screen
-
-
 
 test_disk_extension:
     mov [DriveId], dl
